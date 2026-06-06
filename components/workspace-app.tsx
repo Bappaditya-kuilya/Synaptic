@@ -237,67 +237,79 @@ export function WorkspaceApp() {
 
   return (
     <>
-      <main className="app-shell">
-        <aside className="panel panel-left">
-          <div className="panel-header">
-            <div className="brand">
-              <div className="brand-mark">Synaptic</div>
-              <div className="brand-status">Persistent v1</div>
-            </div>
-            <p className="subtitle">
-              AI thinking workspace for building concept maps that stay useful after the first session.
-            </p>
+      <div className="app-scene">
+        <div className="scene-ribbon scene-ribbon-left" />
+        <div className="scene-ribbon scene-ribbon-right" />
+
+        <header className="site-nav">
+          <div className="site-brand">
+            <div className="brand-mark">S</div>
+            <span>Synaptic</span>
           </div>
 
-          <div className="content-stack">
-            <section className="hero-card">
-              <input
-                className="title-input"
-                value={workspace.title}
-                onChange={(event) =>
-                  setWorkspace((current) => ({
-                    ...current,
-                    title: event.target.value,
-                    updatedAt: new Date().toISOString()
-                  }))
-                }
-              />
-              <p>{workspace.summary}</p>
-              <div className="metrics">
-                <div className="metric-card">
-                  <span>Concepts</span>
-                  <strong>{workspace.nodes.length}</strong>
-                </div>
-                <div className="metric-card">
-                  <span>Links</span>
-                  <strong>{workspace.edges.length}</strong>
-                </div>
-                <div className="metric-card">
-                  <span>Entries</span>
-                  <strong>{workspace.entries.length}</strong>
-                </div>
+          <nav className="site-links">
+            <button className="nav-link" onClick={loadDemoWorkspace}>Workspace</button>
+            <button className="nav-link" onClick={exportWorkspace}>Export</button>
+            <button className="nav-link" onClick={triggerImport}>Import</button>
+            <button className="nav-link" onClick={clearWorkspace}>Reset</button>
+          </nav>
+
+          <button className="site-cta" onClick={loadDemoWorkspace}>Get Started</button>
+        </header>
+
+        <main className="hero-page">
+          <section className="hero-shell reveal reveal-1">
+            <div className="hero-badge">Persistent AI workspace</div>
+            <h1 className="hero-title">
+              The thinking layer that brings
+              {" "}
+              <span>clarity</span>
+              {" "}
+              to complexity
+            </h1>
+            <p className="hero-subtitle">
+              Capture ideas, structure them into a living graph, and keep building a workspace that gets smarter over time.
+            </p>
+            <div className="hero-actions">
+              <button className="hero-primary" onClick={loadDemoWorkspace}>Open Workspace</button>
+              <button className="hero-secondary" onClick={() => setFocusMode((value) => !value)}>
+                {focusMode ? "Release Focus" : "Focus Selection"}
+              </button>
+            </div>
+            <div className="hero-proof">
+              <div className="proof-item">
+                <span>Concepts</span>
+                <strong>{workspace.nodes.length}</strong>
               </div>
-            </section>
+              <div className="proof-item">
+                <span>Connected edges</span>
+                <strong>{workspace.edges.length}</strong>
+              </div>
+              <div className="proof-item">
+                <span>Saved entries</span>
+                <strong>{workspace.entries.length}</strong>
+              </div>
+            </div>
+          </section>
 
-            <section className="section">
-              <h2>Search</h2>
-              <input
-                ref={searchRef}
-                className="search-input"
-                placeholder="Find nodes, summaries, concepts"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <p className="hint-text">Press <code>/</code> to focus search.</p>
-            </section>
+          <section className="showcase-frame reveal reveal-2">
+            <div className="showcase-toolbar">
+              <div className="toolbar-block">
+                <span className="toolbar-label">Search</span>
+                <input
+                  ref={searchRef}
+                  className="toolbar-search"
+                  placeholder="Search concepts"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
 
-            <section className="section">
-              <h2>Filters</h2>
-              <div className="chip-row">
+              <div className="toolbar-chips">
                 {CATEGORY_LABELS.map((category) => (
                   <button
                     key={category}
-                    className="chip"
+                    className="toolbar-chip"
                     data-active={workspace.viewport.activeFilters.includes(category)}
                     onClick={() => toggleFilter(category)}
                   >
@@ -305,177 +317,122 @@ export function WorkspaceApp() {
                   </button>
                 ))}
               </div>
-            </section>
+            </div>
 
-            <section className="composer-box">
-              <h2>Compose</h2>
-              <textarea
-                className="composer-textarea"
-                placeholder="Describe an idea, paste a paragraph, or outline a system you want to think through."
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-              />
-              <div className="button-row">
-                <button className="button button-primary" disabled={isPending} onClick={submitInput}>
-                  {isPending ? "Structuring..." : "Expand Graph"}
-                </button>
-                <button className="button button-secondary" onClick={loadDemoWorkspace}>
-                  Load Starter
-                </button>
-                <button className="button button-secondary" onClick={exportWorkspace}>
-                  Export JSON
-                </button>
-                <button className="button button-secondary" onClick={triggerImport}>
-                  Import JSON
-                </button>
-                <button className="button button-danger" onClick={clearWorkspace}>
-                  Clear Workspace
-                </button>
-              </div>
-              <p className="hint-text">Press <code>Ctrl/Cmd + Enter</code> to submit.</p>
-              <input
-                ref={fileInputRef}
-                hidden
-                accept="application/json"
-                type="file"
-                onChange={importWorkspace}
-              />
-            </section>
-
-            <section className="section">
-              <h2>Showcase Workspaces</h2>
-              <div className="preset-grid">
-                {WORKSPACE_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    className="preset-card"
-                    onClick={() => loadPreset(preset)}
-                  >
-                    <strong>{preset.title}</strong>
-                    <p>{preset.summary}</p>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="section">
-              <h2>Recent Inputs</h2>
-              <div className="entry-list">
-                {workspace.entries.length === 0 ? (
-                  <p className="empty-state">No entries yet. Start by expanding the graph from a paragraph or idea.</p>
-                ) : (
-                  workspace.entries.map((entry) => (
-                    <article className="entry-card" key={entry.id}>
-                      <div className="entry-meta">
-                        <span>{entry.inputType}</span>
-                        <span>{new Date(entry.createdAt).toLocaleString()}</span>
-                      </div>
-                      <p>{entry.summary}</p>
-                    </article>
-                  ))
-                )}
-              </div>
-            </section>
-          </div>
-        </aside>
-
-        <section className="panel-main">
-          <div className="graph-backdrop" />
-          <GraphCanvas
-            nodes={visibleNodes}
-            edges={visibleEdges}
-            selectedNodeId={workspace.viewport.selectedNodeId}
-            onNodeSelect={(nodeId) =>
-              setWorkspace((current) => ({
-                ...current,
-                viewport: {
-                  ...current.viewport,
-                  selectedNodeId: nodeId
+            <div className="showcase-canvas">
+              <div className="canvas-radial" />
+              <div className="canvas-beam canvas-beam-top" />
+              <div className="canvas-beam canvas-beam-bottom" />
+              <div className="canvas-grid" />
+              <GraphCanvas
+                nodes={visibleNodes}
+                edges={visibleEdges}
+                selectedNodeId={workspace.viewport.selectedNodeId}
+                onNodeSelect={(nodeId) =>
+                  setWorkspace((current) => ({
+                    ...current,
+                    viewport: {
+                      ...current.viewport,
+                      selectedNodeId: nodeId
+                    }
+                  }))
                 }
-              }))
-            }
-          />
-          <div className="canvas-overlay">
-            <div className="toolbar">
-              <div className="toolbar-card">
-                <strong>Canvas-first workspace</strong>
-                <span>{workspace.summary}</span>
-              </div>
-              <div className="toolbar-card">
-                <button className="button button-secondary" onClick={() => setFocusMode((value) => !value)}>
-                  {focusMode ? "Disable Focus" : "Focus Selection"}
-                </button>
-              </div>
-            </div>
-            <div className="canvas-footer">
-              <span>Drag nodes. Scroll to zoom. Build memory over time.</span>
-              <span>{visibleNodes.length} visible concepts</span>
-            </div>
-          </div>
-        </section>
+              />
 
-        <aside className="panel panel-right">
-          <div className="right-stack">
-            <section className="summary-box">
-              <h2>Workspace Summary</h2>
-              <p>{workspace.summary}</p>
-            </section>
-
-            <section className="section">
-              <h2>Selected Node</h2>
-              {selectedNode ? (
-                <article className="node-card selected">
-                  <div className="node-meta">
-                    <span>{selectedNode.category}</span>
-                    <span>importance {selectedNode.importance}</span>
+              <aside className="floating-card floating-left">
+                <div className="floating-label">Workspace</div>
+                <input
+                  className="floating-title"
+                  value={workspace.title}
+                  onChange={(event) =>
+                    setWorkspace((current) => ({
+                      ...current,
+                      title: event.target.value,
+                      updatedAt: new Date().toISOString()
+                    }))
+                  }
+                />
+                <p>{workspace.summary}</p>
+                <div className="floating-stats">
+                  <div>
+                    <span>Concepts</span>
+                    <strong>{workspace.nodes.length}</strong>
                   </div>
-                  <h3>{selectedNode.label}</h3>
-                  <p>{selectedNode.summary}</p>
-                  <p className="hint-text">
-                    Touched by {selectedNode.sourceEntryIds.length} source
-                    {selectedNode.sourceEntryIds.length === 1 ? "" : "s"}.
-                  </p>
-                </article>
-              ) : (
-                <p className="empty-state">Select a node to inspect its role in the workspace.</p>
-              )}
-            </section>
+                  <div>
+                    <span>Entries</span>
+                    <strong>{workspace.entries.length}</strong>
+                  </div>
+                </div>
+              </aside>
 
-            <section className="section">
-              <h2>Related Concepts</h2>
-              <div className="related-list">
-                {relatedNodes.length === 0 ? (
-                  <p className="empty-state">No connected concepts visible yet.</p>
+              <aside className="floating-card floating-right">
+                <div className="floating-label">Selection</div>
+                {selectedNode ? (
+                  <>
+                    <h3>{selectedNode.label}</h3>
+                    <p>{selectedNode.summary}</p>
+                    <div className="floating-meta">
+                      <span>{selectedNode.category}</span>
+                      <span>importance {selectedNode.importance}</span>
+                    </div>
+                  </>
                 ) : (
-                  relatedNodes.map((node) => (
-                    <button
-                      className="node-card"
-                      key={node.id}
-                      onClick={() =>
-                        setWorkspace((current) => ({
-                          ...current,
-                          viewport: {
-                            ...current.viewport,
-                            selectedNodeId: node.id
-                          }
-                        }))
-                      }
-                    >
-                      <div className="node-meta">
-                        <span>{node.category}</span>
-                        <span>importance {node.importance}</span>
-                      </div>
-                      <h3>{node.label}</h3>
-                      <p>{node.summary}</p>
-                    </button>
-                  ))
+                  <p>Select a node to inspect it.</p>
                 )}
+              </aside>
+
+              <div className="composer-rail">
+                <div className="composer-panel">
+                  <div className="composer-head">
+                    <div>
+                      <span className="toolbar-label">Compose</span>
+                      <h2>Add a note, thought, or paragraph</h2>
+                    </div>
+                    <span className="composer-shortcut">Ctrl/Cmd + Enter</span>
+                  </div>
+
+                  <textarea
+                    className="composer-input"
+                    placeholder="Paste a note, product thought, research snippet, or unfinished idea."
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                  />
+
+                  <div className="composer-actions">
+                    <button className="hero-primary" disabled={isPending} onClick={submitInput}>
+                      {isPending ? "Structuring..." : "Expand Graph"}
+                    </button>
+                    <button className="hero-secondary" onClick={loadDemoWorkspace}>Load Starter</button>
+                  </div>
+                </div>
               </div>
-            </section>
-          </div>
-        </aside>
-      </main>
-      {toast ? <div className="toast">{toast}</div> : null}
+            </div>
+          </section>
+
+          <section className="preset-strip reveal reveal-3">
+            {WORKSPACE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                className="preset-tile"
+                onClick={() => loadPreset(preset)}
+              >
+                <strong>{preset.title}</strong>
+                <p>{preset.summary}</p>
+              </button>
+            ))}
+          </section>
+        </main>
+      </div>
+
+      <input
+        ref={fileInputRef}
+        hidden
+        accept="application/json"
+        type="file"
+        onChange={importWorkspace}
+      />
+
+      {toast ? <div className="toast-premium">{toast}</div> : null}
     </>
   );
 }

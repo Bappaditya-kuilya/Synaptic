@@ -8,13 +8,13 @@ type SimulationNode = WorkspaceNode & d3.SimulationNodeDatum;
 type SimulationEdge = WorkspaceEdge & d3.SimulationLinkDatum<SimulationNode>;
 
 const CATEGORY_COLORS: Record<string, string> = {
-  systems: "#6db4ff",
-  product: "#7ff7be",
-  research: "#ffd66d",
-  strategy: "#ff8fab",
-  design: "#b08cff",
-  technology: "#5ce1e6",
-  other: "#94a8c5"
+  systems: "#3b82f6",
+  product: "#10b981",
+  research: "#d97706",
+  strategy: "#db2777",
+  design: "#7c3aed",
+  technology: "#2563eb",
+  other: "#64748b"
 };
 
 const RADII = {
@@ -49,6 +49,20 @@ export function GraphCanvas({
 
     const svg = d3.select(svgElement);
     svg.selectAll("*").remove();
+
+    const defs = svg.append("defs");
+    const glow = defs
+      .append("filter")
+      .attr("id", "node-glow")
+      .attr("x", "-120%")
+      .attr("y", "-120%")
+      .attr("width", "340%")
+      .attr("height", "340%");
+
+    glow.append("feGaussianBlur").attr("stdDeviation", 7).attr("result", "blur");
+    const merge = glow.append("feMerge");
+    merge.append("feMergeNode").attr("in", "blur");
+    merge.append("feMergeNode").attr("in", "SourceGraphic");
 
     const root = svg.append("g");
     const edgeLayer = root.append("g");
@@ -95,9 +109,15 @@ export function GraphCanvas({
       .data(simulationEdges, (edge) => edge.id)
       .enter()
       .append("line")
-      .attr("stroke", "rgba(151, 174, 206, 0.28)")
-      .attr("stroke-width", (edge) => 1 + edge.strength * 1.5)
-      .attr("stroke-dasharray", "6 5");
+      .attr("stroke", "rgba(100, 116, 139, 0.22)")
+      .attr("stroke-width", (edge) => 0.9 + edge.strength * 1.2)
+      .attr("stroke-dasharray", "4 8")
+      .attr("stroke-linecap", "round")
+      .attr("opacity", 0)
+      .transition()
+      .duration(900)
+      .ease(d3.easeCubicOut)
+      .attr("opacity", 1);
 
     const nodeSelection = nodeLayer
       .selectAll<SVGGElement, SimulationNode>("g")
@@ -105,6 +125,7 @@ export function GraphCanvas({
       .enter()
       .append("g")
       .style("cursor", "pointer")
+      .style("opacity", 0)
       .on("click", (_event, node) => onNodeSelect(node.id))
       .call(
         d3
@@ -130,30 +151,69 @@ export function GraphCanvas({
       );
 
     nodeSelection
+      .transition()
+      .duration(700)
+      .ease(d3.easeCubicOut)
+      .style("opacity", 1);
+
+    nodeSelection
       .append("circle")
-      .attr("r", (node) => RADII[node.importance] + 12)
+      .attr("r", (node) => RADII[node.importance] + 18)
+      .attr("fill", (node) => `${CATEGORY_COLORS[node.category] ?? CATEGORY_COLORS.other}07`)
+      .attr("stroke", (node) =>
+        node.id === selectedNodeId
+          ? "rgba(15, 23, 42, 0.12)"
+          : "rgba(15, 23, 42, 0.05)"
+      )
+      .attr("stroke-width", 1.1);
+
+    nodeSelection
+      .append("circle")
+      .attr("r", (node) => RADII[node.importance] + 8)
       .attr("fill", "transparent")
       .attr("stroke", (node) =>
         node.id === selectedNodeId
-          ? "rgba(255,255,255,0.28)"
-          : "rgba(109, 180, 255, 0.14)"
+          ? "rgba(17, 24, 39, 0.18)"
+          : `${CATEGORY_COLORS[node.category] ?? CATEGORY_COLORS.other}18`
       );
 
     nodeSelection
       .append("circle")
       .attr("r", (node) => RADII[node.importance])
-      .attr("fill", (node) => `${CATEGORY_COLORS[node.category] ?? CATEGORY_COLORS.other}22`)
+      .attr("fill", (node) => `${CATEGORY_COLORS[node.category] ?? CATEGORY_COLORS.other}14`)
       .attr("stroke", (node) => CATEGORY_COLORS[node.category] ?? CATEGORY_COLORS.other)
-      .attr("stroke-width", (node) => (node.id === selectedNodeId ? 3 : 1.4));
+      .attr("stroke-width", (node) => (node.id === selectedNodeId ? 2.4 : 1.35))
+      .attr("filter", "url(#node-glow)");
+
+    nodeSelection
+      .append("circle")
+      .attr("r", 3.5)
+      .attr("fill", "#ffffff");
 
     nodeSelection
       .append("text")
       .text((node) => node.label)
-      .attr("y", (node) => RADII[node.importance] + 20)
+      .attr("y", (node) => RADII[node.importance] + 24)
       .attr("text-anchor", "middle")
-      .attr("fill", "#eaf2ff")
+      .attr("fill", "#111827")
       .attr("font-size", 12)
-      .attr("font-family", "Inter, sans-serif");
+      .attr("font-weight", 600)
+      .attr("font-family", "Manrope, sans-serif");
+
+    nodeSelection
+      .on("mouseenter", function (_event, node) {
+        d3.select(this).raise();
+        d3.select(this)
+          .transition()
+          .duration(180)
+          .attr("transform", `translate(${node.x ?? 0}, ${node.y ?? 0}) scale(1.03)`);
+      })
+      .on("mouseleave", function (_event, node) {
+        d3.select(this)
+          .transition()
+          .duration(180)
+          .attr("transform", `translate(${node.x ?? 0}, ${node.y ?? 0}) scale(1)`);
+      });
 
     simulation.on("tick", () => {
       edgeSelection
