@@ -3,7 +3,7 @@
 import { useDeferredValue, useEffect, useRef, useState, useTransition } from "react";
 import { DEMO_WORKSPACE, WORKSPACE_PRESETS } from "@/lib/mock-data";
 import { getConnectedNodes } from "@/lib/graph-utils";
-import type { NodeCategory, WorkspaceState, WorkspaceSummary } from "@/lib/types";
+import type { NodeCategory, WorkspaceEvent, WorkspaceState, WorkspaceSummary } from "@/lib/types";
 import { GraphCanvas } from "@/components/graph-canvas";
 
 const STORAGE_KEY = "synaptic.workspace.v1";
@@ -25,6 +25,7 @@ function makeInitialWorkspace(): WorkspaceState {
 export function WorkspaceApp() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(makeInitialWorkspace);
   const [workspaceList, setWorkspaceList] = useState<WorkspaceSummary[]>([]);
+  const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([]);
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
@@ -61,6 +62,7 @@ export function WorkspaceApp() {
           setWorkspace(workspacePayload.workspace as WorkspaceState);
           setWorkspaceList((listPayload.workspaces as WorkspaceSummary[]) ?? []);
           setUser(authPayload.user ?? null);
+          await loadWorkspaceEvents((workspacePayload.workspace as WorkspaceState).id);
         }
       } catch {
         try {
@@ -174,6 +176,7 @@ export function WorkspaceApp() {
         }
         setWorkspace(payload.workspace as WorkspaceState);
         await refreshWorkspaceList();
+        await loadWorkspaceEvents((payload.workspace as WorkspaceState).id);
         setDraft("");
         setToast(payload.result?.warnings?.[0] ?? "Graph expanded.");
       } catch (error) {
@@ -261,6 +264,7 @@ export function WorkspaceApp() {
         }
         setWorkspace(payload.workspace as WorkspaceState);
         await refreshWorkspaceList();
+        await loadWorkspaceEvents((payload.workspace as WorkspaceState).id);
         setFocusMode(false);
         setToast(`Imported ${(payload.workspace as WorkspaceState).title}.`);
       } catch (error) {
@@ -290,6 +294,7 @@ export function WorkspaceApp() {
       }
       setWorkspace(payload.workspace as WorkspaceState);
       await refreshWorkspaceList();
+      await loadWorkspaceEvents((payload.workspace as WorkspaceState).id);
       setFocusMode(false);
       setToast(blank ? "Workspace cleared." : "Workspace restored.");
     } catch (error) {
@@ -314,6 +319,7 @@ export function WorkspaceApp() {
       }
       setWorkspace(payload.workspace as WorkspaceState);
       setWorkspaceList((payload.workspaces as WorkspaceSummary[]) ?? []);
+      await loadWorkspaceEvents((payload.workspace as WorkspaceState).id);
       setNewWorkspaceTitle("");
       setToast("Workspace created.");
     } catch (error) {
@@ -370,9 +376,23 @@ export function WorkspaceApp() {
         throw new Error(payload.error || "Could not switch workspace");
       }
       setWorkspace(payload.workspace as WorkspaceState);
+      await loadWorkspaceEvents((payload.workspace as WorkspaceState).id);
       setToast("Workspace switched.");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Could not switch workspace");
+    }
+  }
+
+  async function loadWorkspaceEvents(workspaceId: string) {
+    try {
+      const response = await fetch(`/api/workspaces/${workspaceId}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not load workspace history");
+      }
+      setWorkspaceEvents((payload.events as WorkspaceEvent[]) ?? []);
+    } catch {
+      setWorkspaceEvents([]);
     }
   }
 
@@ -619,6 +639,34 @@ export function WorkspaceApp() {
               </button>
             ))}
           </section>
+
+          <section className="history-strip reveal reveal-3">
+            <div className="history-head">
+              <div>
+                <span className="toolbar-label">History</span>
+                <h2>Recent workspace activity</h2>
+              </div>
+            </div>
+            <div className="history-grid">
+              {workspaceEvents.length === 0 ? (
+                <article className="history-card">
+                  <strong>No activity yet</strong>
+                  <p>Your workspace timeline will appear here as you create, import, reset, switch, and expand it.</p>
+                </article>
+              ) : (
+                workspaceEvents.map((event) => (
+                  <article className="history-card" key={event.id}>
+                    <div className="history-meta">
+                      <span>{event.type}</span>
+                      <span>{new Date(event.createdAt).toLocaleString()}</span>
+                    </div>
+                    <strong>{formatEventTitle(event.type)}</strong>
+                    <p>{formatEventDescription(event)}</p>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
         </main>
       </div>
 
@@ -633,4 +681,51 @@ export function WorkspaceApp() {
       {toast ? <div className="toast-premium">{toast}</div> : null}
     </>
   );
+}
+
+function formatEventTitle(type: WorkspaceEvent["type"]) {
+  switch (type) {
+    case "created":
+      return "Workspace created";
+    case "updated":
+      return "Workspace updated";
+    case "extract":
+      return "Graph expanded";
+    case "reset":
+      return "Workspace reset";
+    case "imported":
+      return "Workspace imported";
+    case "deleted":
+      return "Workspace deleted";
+    case "switched":
+      return "Workspace switched";
+    default:
+      return "Workspace activity";
+  }
+}
+
+function formatEventDescription(event: WorkspaceEvent) {
+  if (event.type === "extract") {
+    const nodes = Number(event.payload.addedNodes ?? 0);
+    const edges = Number(event.payload.addedEdges ?? 0);
+    return `Added ${nodes} concepts and ${edges} relationships from a new input.`;
+  }
+
+  if (event.type === "reset") {
+    return "The workspace was restored to a clean or preset state.";
+  }
+
+  if (event.type === "imported") {
+    return "A saved workspace was imported into your account.";
+  }
+
+  if (event.type === "created") {
+    return "A fresh workspace was created and made active.";
+  }
+
+  if (event.type === "switched") {
+    return "You switched into this workspace and continued from where you left off.";
+  }
+
+  return "A change was recorded in the workspace timeline.";
 }
