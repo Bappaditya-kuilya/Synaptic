@@ -1,48 +1,7 @@
 import { z } from "zod";
 import { heuristicExtract } from "@/lib/heuristics";
+import { categorySchema, extractionRequestSchema, graphExtractionResultSchema } from "@/lib/schemas";
 import type { GraphExtractionResult, NodeCategory } from "@/lib/types";
-
-const categorySchema = z.enum([
-  "systems",
-  "product",
-  "research",
-  "strategy",
-  "design",
-  "technology",
-  "other"
-]);
-
-const resultSchema = z.object({
-  summary: z.string().min(1),
-  nodes: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        label: z.string().min(1),
-        category: categorySchema,
-        importance: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-        summary: z.string().min(1)
-      })
-    )
-    .min(1)
-    .max(6),
-  edges: z.array(
-    z.object({
-      source: z.string().min(1),
-      target: z.string().min(1),
-      strength: z.number().min(0.1).max(1),
-      relationType: z.string().min(1)
-    })
-  ),
-  warnings: z.array(z.string()).optional()
-});
-
-const requestSchema = z.object({
-  workspaceId: z.string().min(1),
-  text: z.string().min(10),
-  existingContext: z.array(z.string()).default([]),
-  sourceMetadata: z.record(z.string(), z.string()).optional()
-});
 
 function sanitizeId(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -54,10 +13,10 @@ function sanitizeCategory(value: string): NodeCategory {
 }
 
 export function parseExtractionRequest(input: unknown) {
-  return requestSchema.parse(input);
+  return extractionRequestSchema.parse(input);
 }
 
-export async function extractGraph(input: z.infer<typeof requestSchema>): Promise<GraphExtractionResult> {
+export async function extractGraph(input: z.infer<typeof extractionRequestSchema>): Promise<GraphExtractionResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return heuristicExtract(input.text, input.existingContext.map((item) => item.toLowerCase()));
@@ -132,7 +91,7 @@ ${input.text}
     return heuristicExtract(input.text, input.existingContext.map((item) => item.toLowerCase()));
   }
 
-  const parsed = resultSchema.parse(JSON.parse(rawText));
+  const parsed = graphExtractionResultSchema.parse(JSON.parse(rawText));
   return {
     ...parsed,
     nodes: parsed.nodes.map((node) => ({

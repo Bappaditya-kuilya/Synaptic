@@ -2,8 +2,8 @@
 
 import { useDeferredValue, useEffect, useRef, useState, useTransition } from "react";
 import { DEMO_WORKSPACE, WORKSPACE_PRESETS } from "@/lib/mock-data";
-import { createEntry, getConnectedNodes, mergeExtraction } from "@/lib/graph-utils";
-import type { GraphExtractionResult, NodeCategory, WorkspaceState } from "@/lib/types";
+import { getConnectedNodes } from "@/lib/graph-utils";
+import type { NodeCategory, WorkspaceState } from "@/lib/types";
 import { GraphCanvas } from "@/components/graph-canvas";
 
 const STORAGE_KEY = "synaptic.workspace.v1";
@@ -34,14 +34,36 @@ export function WorkspaceApp() {
   const deferredQuery = useDeferredValue(query);
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setWorkspace(JSON.parse(stored) as WorkspaceState);
+    let cancelled = false;
+
+    async function loadWorkspace() {
+      try {
+        const response = await fetch("/api/workspace", { cache: "no-store" });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not load workspace");
+        }
+        if (!cancelled) {
+          setWorkspace(payload.workspace as WorkspaceState);
+        }
+      } catch {
+        try {
+          const stored = window.localStorage.getItem(STORAGE_KEY);
+          if (stored && !cancelled) {
+            setWorkspace(JSON.parse(stored) as WorkspaceState);
+          }
+        } catch {
+          if (!cancelled) {
+            setToast("Could not restore saved workspace.");
+          }
+        }
       }
-    } catch {
-      setToast("Could not restore saved workspace.");
     }
+
+    void loadWorkspace();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -118,7 +140,7 @@ export function WorkspaceApp() {
 
     startTransition(async () => {
       try {
-        const response = await fetch("/api/graph/extract", {
+        const response = await fetch("/api/workspace/extract", {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -134,18 +156,9 @@ export function WorkspaceApp() {
         if (!response.ok) {
           throw new Error(payload.error || "Extraction failed");
         }
-
-        const result = payload as GraphExtractionResult;
-        const entry = createEntry(text, result.summary, "text");
-        setWorkspace((current) => ({
-          ...mergeExtraction(current, result, entry),
-          viewport: {
-            ...current.viewport,
-            selectedNodeId: result.nodes[0]?.id ?? current.viewport.selectedNodeId
-          }
-        }));
+        setWorkspace(payload.workspace as WorkspaceState);
         setDraft("");
-        setToast(result.warnings?.[0] ?? "Graph expanded.");
+        setToast(payload.result?.warnings?.[0] ?? "Graph expanded.");
       } catch (error) {
         setToast(error instanceof Error ? error.message : "Extraction failed");
       }
@@ -168,15 +181,11 @@ export function WorkspaceApp() {
   }
 
   function loadDemoWorkspace() {
-    setWorkspace(makeInitialWorkspace());
-    setFocusMode(false);
-    setToast("Starter workspace restored.");
+    void resetWorkspace();
   }
 
   function loadPreset(workspacePreset: WorkspaceState) {
-    setWorkspace(workspacePreset);
-    setFocusMode(false);
-    setToast(`Loaded ${workspacePreset.title}.`);
+    void resetWorkspace(workspacePreset.id);
   }
 
   function exportWorkspace() {
@@ -192,21 +201,7 @@ export function WorkspaceApp() {
   }
 
   function clearWorkspace() {
-    setWorkspace({
-      ...makeInitialWorkspace(),
-      nodes: [],
-      edges: [],
-      entries: [],
-      summary: "A fresh workspace ready for a new line of thought.",
-      viewport: {
-        zoom: 1,
-        panX: 0,
-        panY: 0,
-        selectedNodeId: null,
-        activeFilters: []
-      }
-    });
-    setToast("Workspace cleared.");
+    void resetWorkspace(undefined, true);
   }
 
   function triggerImport() {
@@ -220,19 +215,54 @@ export function WorkspaceApp() {
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const parsed = JSON.parse(String(reader.result)) as WorkspaceState;
-        setWorkspace(parsed);
+        const response = await fetch("/api/workspace/import", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ workspace: parsed })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Import failed");
+        }
+        setWorkspace(payload.workspace as WorkspaceState);
         setFocusMode(false);
-        setToast(`Imported ${parsed.title}.`);
-      } catch {
-        setToast("Import failed. Select a valid Synaptic workspace JSON file.");
+        setToast(`Imported ${(payload.workspace as WorkspaceState).title}.`);
+      } catch (error) {
+        setToast(error instanceof Error ? error.message : "Import failed. Select a valid Synaptic workspace JSON file.");
       } finally {
         event.target.value = "";
       }
     };
     reader.readAsText(file);
+  }
+
+  async function resetWorkspace(presetId?: string, blank = false) {
+    try {
+      const response = await fetch("/api/workspace/reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          presetId,
+          blank
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not reset workspace");
+      }
+      setWorkspace(payload.workspace as WorkspaceState);
+      setFocusMode(false);
+      setToast(blank ? "Workspace cleared." : "Workspace restored.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Could not reset workspace");
+    }
   }
 
   return (
