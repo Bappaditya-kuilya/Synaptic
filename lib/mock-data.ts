@@ -18,9 +18,11 @@ function createWorkspaceState(config: {
   const now = new Date().toISOString();
   return {
     id: config.id,
+    ownerId: "local-user",
     title: config.title,
     createdAt: now,
     updatedAt: now,
+    version: 1,
     summary: config.summary,
     nodes: config.nodes.map((node) => ({
       ...node,

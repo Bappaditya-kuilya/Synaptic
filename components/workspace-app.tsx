@@ -3,7 +3,7 @@
 import { useDeferredValue, useEffect, useRef, useState, useTransition } from "react";
 import { DEMO_WORKSPACE, WORKSPACE_PRESETS } from "@/lib/mock-data";
 import { getConnectedNodes } from "@/lib/graph-utils";
-import type { NodeCategory, WorkspaceState } from "@/lib/types";
+import type { NodeCategory, WorkspaceState, WorkspaceSummary } from "@/lib/types";
 import { GraphCanvas } from "@/components/graph-canvas";
 
 const STORAGE_KEY = "synaptic.workspace.v1";
@@ -24,8 +24,10 @@ function makeInitialWorkspace(): WorkspaceState {
 
 export function WorkspaceApp() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(makeInitialWorkspace);
+  const [workspaceList, setWorkspaceList] = useState<WorkspaceSummary[]>([]);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
+  const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -38,13 +40,21 @@ export function WorkspaceApp() {
 
     async function loadWorkspace() {
       try {
-        const response = await fetch("/api/workspace", { cache: "no-store" });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error || "Could not load workspace");
+        const [workspaceResponse, listResponse] = await Promise.all([
+          fetch("/api/workspace", { cache: "no-store" }),
+          fetch("/api/workspaces", { cache: "no-store" })
+        ]);
+        const workspacePayload = await workspaceResponse.json();
+        const listPayload = await listResponse.json();
+        if (!workspaceResponse.ok) {
+          throw new Error(workspacePayload.error || "Could not load workspace");
+        }
+        if (!listResponse.ok) {
+          throw new Error(listPayload.error || "Could not load workspaces");
         }
         if (!cancelled) {
-          setWorkspace(payload.workspace as WorkspaceState);
+          setWorkspace(workspacePayload.workspace as WorkspaceState);
+          setWorkspaceList((listPayload.workspaces as WorkspaceSummary[]) ?? []);
         }
       } catch {
         try {
@@ -157,6 +167,7 @@ export function WorkspaceApp() {
           throw new Error(payload.error || "Extraction failed");
         }
         setWorkspace(payload.workspace as WorkspaceState);
+        await refreshWorkspaceList();
         setDraft("");
         setToast(payload.result?.warnings?.[0] ?? "Graph expanded.");
       } catch (error) {
@@ -186,6 +197,19 @@ export function WorkspaceApp() {
 
   function loadPreset(workspacePreset: WorkspaceState) {
     void resetWorkspace(workspacePreset.id);
+  }
+
+  async function refreshWorkspaceList() {
+    try {
+      const response = await fetch("/api/workspaces", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not load workspaces");
+      }
+      setWorkspaceList((payload.workspaces as WorkspaceSummary[]) ?? []);
+    } catch {
+      // Keep existing list if refresh fails.
+    }
   }
 
   function exportWorkspace() {
@@ -230,6 +254,7 @@ export function WorkspaceApp() {
           throw new Error(payload.error || "Import failed");
         }
         setWorkspace(payload.workspace as WorkspaceState);
+        await refreshWorkspaceList();
         setFocusMode(false);
         setToast(`Imported ${(payload.workspace as WorkspaceState).title}.`);
       } catch (error) {
@@ -258,10 +283,55 @@ export function WorkspaceApp() {
         throw new Error(payload.error || "Could not reset workspace");
       }
       setWorkspace(payload.workspace as WorkspaceState);
+      await refreshWorkspaceList();
       setFocusMode(false);
       setToast(blank ? "Workspace cleared." : "Workspace restored.");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Could not reset workspace");
+    }
+  }
+
+  async function createWorkspace() {
+    try {
+      const response = await fetch("/api/workspaces", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          title: newWorkspaceTitle.trim() || undefined
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not create workspace");
+      }
+      setWorkspace(payload.workspace as WorkspaceState);
+      setWorkspaceList((payload.workspaces as WorkspaceSummary[]) ?? []);
+      setNewWorkspaceTitle("");
+      setToast("Workspace created.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Could not create workspace");
+    }
+  }
+
+  async function switchWorkspace(workspaceId: string) {
+    try {
+      const response = await fetch("/api/workspaces/switch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ workspaceId })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not switch workspace");
+      }
+      setWorkspace(payload.workspace as WorkspaceState);
+      setToast("Workspace switched.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Could not switch workspace");
     }
   }
 
@@ -344,6 +414,40 @@ export function WorkspaceApp() {
                     onClick={() => toggleFilter(category)}
                   >
                     {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="workspace-switcher">
+              <div className="workspace-switcher-head">
+                <div>
+                  <span className="toolbar-label">Workspaces</span>
+                  <h3>Pick up where you left off</h3>
+                </div>
+                <div className="workspace-create">
+                  <input
+                    className="workspace-create-input"
+                    placeholder="New workspace title"
+                    value={newWorkspaceTitle}
+                    onChange={(event) => setNewWorkspaceTitle(event.target.value)}
+                  />
+                  <button className="workspace-create-button" onClick={createWorkspace}>
+                    Create
+                  </button>
+                </div>
+              </div>
+
+              <div className="workspace-list">
+                {workspaceList.map((item) => (
+                  <button
+                    key={item.id}
+                    className="workspace-list-item"
+                    data-active={item.id === workspace.id}
+                    onClick={() => switchWorkspace(item.id)}
+                  >
+                    <strong>{item.title}</strong>
+                    <span>{item.nodeCount} nodes · {item.entryCount} entries</span>
                   </button>
                 ))}
               </div>

@@ -52,14 +52,35 @@ export interface ViewportState {
 
 export interface WorkspaceState {
   id: string;
+  ownerId: string;
   title: string;
   createdAt: string;
   updatedAt: string;
+  version: number;
   summary: string;
   nodes: WorkspaceNode[];
   edges: WorkspaceEdge[];
   entries: WorkspaceEntry[];
   viewport: ViewportState;
+}
+
+export interface WorkspaceSummary {
+  id: string;
+  ownerId: string;
+  title: string;
+  summary: string;
+  updatedAt: string;
+  version: number;
+  nodeCount: number;
+  entryCount: number;
+}
+
+export interface WorkspaceEvent {
+  id: string;
+  workspaceId: string;
+  type: "created" | "updated" | "extract" | "reset" | "imported" | "deleted" | "switched";
+  payload: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface GraphExtractionNode {

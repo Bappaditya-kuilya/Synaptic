@@ -53,14 +53,35 @@ export const viewportStateSchema = z.object({
 
 export const workspaceStateSchema = z.object({
   id: z.string().min(1),
+  ownerId: z.string().min(1),
   title: z.string().min(1),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
+  version: z.number().int().nonnegative(),
   summary: z.string().min(1),
   nodes: z.array(workspaceNodeSchema),
   edges: z.array(workspaceEdgeSchema),
   entries: z.array(workspaceEntrySchema),
   viewport: viewportStateSchema
+});
+
+export const workspaceSummarySchema = z.object({
+  id: z.string().min(1),
+  ownerId: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  updatedAt: z.string().min(1),
+  version: z.number().int().nonnegative(),
+  nodeCount: z.number().int().nonnegative(),
+  entryCount: z.number().int().nonnegative()
+});
+
+export const workspaceEventSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  type: z.enum(["created", "updated", "extract", "reset", "imported", "deleted", "switched"]),
+  payload: z.record(z.string(), z.unknown()),
+  createdAt: z.string().min(1)
 });
 
 export const graphExtractionNodeSchema = z.object({
@@ -103,4 +124,13 @@ export const updateWorkspaceSchema = z.object({
 export const resetWorkspaceSchema = z.object({
   presetId: z.string().optional(),
   blank: z.boolean().optional()
+});
+
+export const createWorkspaceSchema = z.object({
+  title: z.string().min(1).max(120).optional(),
+  presetId: z.string().optional()
+});
+
+export const switchWorkspaceSchema = z.object({
+  workspaceId: z.string().min(1)
 });
