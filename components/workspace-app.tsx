@@ -25,9 +25,12 @@ function makeInitialWorkspace(): WorkspaceState {
 export function WorkspaceApp() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(makeInitialWorkspace);
   const [workspaceList, setWorkspaceList] = useState<WorkspaceSummary[]>([]);
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -42,10 +45,12 @@ export function WorkspaceApp() {
       try {
         const [workspaceResponse, listResponse] = await Promise.all([
           fetch("/api/workspace", { cache: "no-store" }),
-          fetch("/api/workspaces", { cache: "no-store" })
+          fetch("/api/workspaces", { cache: "no-store" }),
+          fetch("/api/auth/me", { cache: "no-store" })
         ]);
         const workspacePayload = await workspaceResponse.json();
         const listPayload = await listResponse.json();
+        const authPayload = await (await fetch("/api/auth/me", { cache: "no-store" })).json();
         if (!workspaceResponse.ok) {
           throw new Error(workspacePayload.error || "Could not load workspace");
         }
@@ -55,6 +60,7 @@ export function WorkspaceApp() {
         if (!cancelled) {
           setWorkspace(workspacePayload.workspace as WorkspaceState);
           setWorkspaceList((listPayload.workspaces as WorkspaceSummary[]) ?? []);
+          setUser(authPayload.user ?? null);
         }
       } catch {
         try {
@@ -315,6 +321,41 @@ export function WorkspaceApp() {
     }
   }
 
+  async function handleAuth(mode: "register" | "login") {
+    try {
+      const response = await fetch(`/api/auth/${mode}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email: authEmail,
+          password: authPassword
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || `Could not ${mode}`);
+      }
+      setUser(payload.user ?? null);
+      await refreshWorkspaceList();
+      setAuthPassword("");
+      setToast(mode === "register" ? "Account created." : "Signed in.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Authentication failed");
+    }
+  }
+
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      setUser(null);
+      setToast("Signed out.");
+    } catch {
+      setToast("Could not sign out.");
+    }
+  }
+
   async function switchWorkspace(workspaceId: string) {
     try {
       const response = await fetch("/api/workspaces/switch", {
@@ -354,7 +395,30 @@ export function WorkspaceApp() {
             <button className="nav-link" onClick={clearWorkspace}>Reset</button>
           </nav>
 
-          <button className="site-cta" onClick={loadDemoWorkspace}>Get Started</button>
+          {user ? (
+            <div className="auth-pill">
+              <span>{user.email}</span>
+              <button className="auth-pill-button" onClick={logout}>Sign out</button>
+            </div>
+          ) : (
+            <div className="auth-inline">
+              <input
+                className="auth-input"
+                placeholder="Email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+              />
+              <input
+                className="auth-input"
+                placeholder="Password"
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+              />
+              <button className="auth-action" onClick={() => void handleAuth("login")}>Sign in</button>
+              <button className="site-cta" onClick={() => void handleAuth("register")}>Create account</button>
+            </div>
+          )}
         </header>
 
         <main className="hero-page">

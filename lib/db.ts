@@ -23,6 +23,22 @@ db.exec(`
     value TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL DEFAULT 'local-user',
@@ -86,6 +102,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_edges_workspace_id ON edges(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_entries_workspace_id ON entries(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_workspace_events_workspace_id ON workspace_events(workspace_id);
+  CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 `);
 
 ensureColumn("workspaces", "owner_id", "TEXT NOT NULL DEFAULT 'local-user'");

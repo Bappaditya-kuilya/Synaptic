@@ -183,21 +183,25 @@ function toWorkspaceEvent(row: WorkspaceEventRow): WorkspaceEvent {
   });
 }
 
-function getCurrentWorkspaceId() {
+function appStateKey(ownerId: string) {
+  return `${APP_STATE_CURRENT_WORKSPACE}:${ownerId}`;
+}
+
+function getCurrentWorkspaceId(ownerId: string) {
   const row = db
     .prepare("SELECT value FROM app_state WHERE key = ?")
-    .get(APP_STATE_CURRENT_WORKSPACE) as { value: string } | undefined;
+    .get(appStateKey(ownerId)) as { value: string } | undefined;
   return row?.value ?? null;
 }
 
-function setCurrentWorkspaceId(workspaceId: string) {
+function setCurrentWorkspaceId(ownerId: string, workspaceId: string) {
   db.prepare(
     `
       INSERT INTO app_state (key, value)
       VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `
-  ).run(APP_STATE_CURRENT_WORKSPACE, workspaceId);
+  ).run(appStateKey(ownerId), workspaceId);
 }
 
 function persistEvent(workspaceId: string, type: WorkspaceEvent["type"], payload: Record<string, unknown>) {
@@ -328,7 +332,7 @@ function persistWorkspace(
     }
 
     if (options?.setCurrent !== false) {
-      setCurrentWorkspaceId(next.id);
+      setCurrentWorkspaceId(next.ownerId, next.id);
     }
 
     if (options?.eventType) {
@@ -365,6 +369,10 @@ function fetchWorkspaceById(workspaceId: string) {
 }
 
 export async function listWorkspaces() {
+  return listWorkspacesByOwner(DEFAULT_OWNER_ID);
+}
+
+export async function listWorkspacesByOwner(ownerId: string) {
   const rows = db.prepare(
     `
       SELECT
@@ -387,27 +395,39 @@ export async function listWorkspaces() {
         FROM entries
         GROUP BY workspace_id
       ) e ON e.workspace_id = w.id
+      WHERE w.owner_id = ?
       ORDER BY w.updated_at DESC
     `
-  ).all() as WorkspaceSummaryRow[];
+  ).all(ownerId) as WorkspaceSummaryRow[];
 
   return rows.map(toWorkspaceSummary);
 }
 
-export async function readWorkspace(workspaceId: string) {
-  return fetchWorkspaceById(workspaceId);
+export async function readWorkspace(workspaceId: string, ownerId?: string) {
+  const workspace = fetchWorkspaceById(workspaceId);
+  if (!workspace) {
+    return null;
+  }
+  if (ownerId && workspace.ownerId !== ownerId) {
+    return null;
+  }
+  return workspace;
 }
 
-export async function readCurrentWorkspace() {
-  const currentId = getCurrentWorkspaceId();
+export async function readCurrentWorkspace(ownerId = DEFAULT_OWNER_ID) {
+  const currentId = getCurrentWorkspaceId(ownerId);
   if (currentId) {
     const existing = fetchWorkspaceById(currentId);
-    if (existing) {
+    if (existing && existing.ownerId === ownerId) {
       return existing;
     }
   }
 
-  const seeded = cloneWorkspace(DEMO_WORKSPACE);
+  const seeded = {
+    ...cloneWorkspace(DEMO_WORKSPACE),
+    ownerId,
+    version: 1
+  };
   return persistWorkspace(seeded, {
     eventType: "created",
     eventPayload: { source: "demo-seed" }
@@ -426,6 +446,10 @@ export async function writeCurrentWorkspace(workspace: WorkspaceState) {
 }
 
 export async function createWorkspace(options?: { title?: string; presetId?: string }) {
+  return createWorkspaceForOwner(DEFAULT_OWNER_ID, options);
+}
+
+export async function createWorkspaceForOwner(ownerId: string, options?: { title?: string; presetId?: string }) {
   const preset = options?.presetId
     ? WORKSPACE_PRESETS.find((item) => item.id === options.presetId)
     : null;
@@ -435,7 +459,7 @@ export async function createWorkspace(options?: { title?: string; presetId?: str
   const workspace = {
     ...base,
     id: randomUUID(),
-    ownerId: DEFAULT_OWNER_ID,
+    ownerId,
     title: options?.title?.trim() || base.title,
     createdAt: now,
     updatedAt: now
@@ -448,18 +472,32 @@ export async function createWorkspace(options?: { title?: string; presetId?: str
 }
 
 export async function switchCurrentWorkspace(workspaceId: string) {
+  return switchCurrentWorkspaceForOwner(DEFAULT_OWNER_ID, workspaceId);
+}
+
+export async function switchCurrentWorkspaceForOwner(ownerId: string, workspaceId: string) {
   const workspace = fetchWorkspaceById(workspaceId);
   if (!workspace) {
     throw new Error("Workspace not found");
   }
-  setCurrentWorkspaceId(workspaceId);
+  if (workspace.ownerId !== ownerId) {
+    throw new Error("Workspace not found");
+  }
+  setCurrentWorkspaceId(ownerId, workspaceId);
   persistEvent(workspaceId, "switched", {});
   return workspace;
 }
 
 export async function deleteWorkspace(workspaceId: string) {
+  return deleteWorkspaceForOwner(DEFAULT_OWNER_ID, workspaceId);
+}
+
+export async function deleteWorkspaceForOwner(ownerId: string, workspaceId: string) {
   const workspace = fetchWorkspaceById(workspaceId);
   if (!workspace) {
+    throw new Error("Workspace not found");
+  }
+  if (workspace.ownerId !== ownerId) {
     throw new Error("Workspace not found");
   }
 
@@ -471,21 +509,28 @@ export async function deleteWorkspace(workspaceId: string) {
     db.prepare("DELETE FROM workspaces WHERE id = ?").run(workspaceId);
   })();
 
-  const nextCurrent = getCurrentWorkspaceId();
+  const nextCurrent = getCurrentWorkspaceId(ownerId);
   if (nextCurrent === workspaceId) {
-    const remaining = await listWorkspaces();
+    const remaining = await listWorkspacesByOwner(ownerId);
     if (remaining[0]) {
-      setCurrentWorkspaceId(remaining[0].id);
+      setCurrentWorkspaceId(ownerId, remaining[0].id);
     } else {
-      const created = await createWorkspace({ title: "Untitled Workspace" });
-      setCurrentWorkspaceId(created.id);
+      const created = await createWorkspaceForOwner(ownerId, { title: "Untitled Workspace" });
+      setCurrentWorkspaceId(ownerId, created.id);
     }
   }
 }
 
 export async function resetWorkspace(workspaceId: string, options?: { presetId?: string; blank?: boolean }) {
+  return resetWorkspaceForOwner(DEFAULT_OWNER_ID, workspaceId, options);
+}
+
+export async function resetWorkspaceForOwner(ownerId: string, workspaceId: string, options?: { presetId?: string; blank?: boolean }) {
   const current = fetchWorkspaceById(workspaceId);
   if (!current) {
+    throw new Error("Workspace not found");
+  }
+  if (current.ownerId !== ownerId) {
     throw new Error("Workspace not found");
   }
 
@@ -513,10 +558,15 @@ export async function resetWorkspace(workspaceId: string, options?: { presetId?:
 }
 
 export async function importWorkspace(workspace: WorkspaceState) {
+  return importWorkspaceForOwner(DEFAULT_OWNER_ID, workspace);
+}
+
+export async function importWorkspaceForOwner(ownerId: string, workspace: WorkspaceState) {
   const imported = {
     ...workspace,
     id: randomUUID(),
-    ownerId: DEFAULT_OWNER_ID,
+    ownerId,
+    version: 1,
     updatedAt: new Date().toISOString()
   };
 
@@ -527,6 +577,15 @@ export async function importWorkspace(workspace: WorkspaceState) {
 }
 
 export async function listWorkspaceEvents(workspaceId: string) {
+  return listWorkspaceEventsForOwner(DEFAULT_OWNER_ID, workspaceId);
+}
+
+export async function listWorkspaceEventsForOwner(ownerId: string, workspaceId: string) {
+  const workspace = fetchWorkspaceById(workspaceId);
+  if (!workspace || workspace.ownerId !== ownerId) {
+    return [];
+  }
+
   const rows = db.prepare(
     `
       SELECT * FROM workspace_events
